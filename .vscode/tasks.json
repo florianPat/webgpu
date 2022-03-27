@@ -1,0 +1,29 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build emscripten",
+            "type": "shell",
+            "command": "mkdir -p emcmake-build && cd emcmake-build && emcmake cmake .. && cmake --build .",
+            "problemMatcher": [],
+        },
+        {
+            "label": "build native debug",
+            "type": "shell",
+            "command": "mkdir -p native-build && cd native-build && cmake .. -DCMAKE_BUILD_TYPE=Debug -DDawn_DIR=/home/florian/projects/dawn/out/Release/ && cmake --build .",
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build native release",
+            "type": "shell",
+            "command": "mkdir -p native-build && cd native-build && cmake .. -DCMAKE_BUILD_TYPE=Release -DDawn_DIR=/home/florian/projects/dawn/out/Release/ && cmake --build .",
+            "problemMatcher": [],
+        }
+    ]
+}

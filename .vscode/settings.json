@@ -1,0 +1,8 @@
+{
+    "cmake.emscriptenSearchDirs": [
+        "/usr/lib/emscripten"
+    ],
+    "cmake.configureArgs": [
+        "-DDawn_DIR=/home/florian/projects/dawn/out/Release/"
+    ]
+}
