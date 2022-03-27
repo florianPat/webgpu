@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.20)
 project(webgpu)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -35,9 +35,11 @@ if (NOT EMSCRIPTEN)
 								   PRIVATE
 								   LINUX)
 		find_package(X11 REQUIRED)
+		find_package(OpenGL REQUIRED EGL GLX OpenGL)
 		target_link_libraries(webgpu
 							  PUBLIC
-							  X11)
+							  X11
+							  OpenGL::GL OpenGL::EGL OpenGL::GLX)
 	endif()
 else()
 	set(CMAKE_EXE_LINKER_FLAGS "-s USE_WEBGPU=1")

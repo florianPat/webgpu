@@ -5,27 +5,33 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #include <emscripten/html5_webgpu.h>
-#include <webgpu/webgpu_cpp.h>
 #else
 #include <dawn/webgpu.h>
+#include <dawn/webgpu_cpp.h>
+#include <dawn/dawn_proc.h>
+#include <dawn/native/DawnNative.h>
+#include <dawn/native/OpenGLBackend.h>
 #include "X11.h"
+#include <EGL/egl.h>
+#include <GLES3/gl3.h>
 #endif
 
 const char* WGSL_SHADER = R"(
-[[stage(vertex)]]
-fn vs_main([[builtin(vertex_index)]] in_vertex_index: u32) -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
     let x = f32(i32(in_vertex_index) - 1);
     let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
     return vec4<f32>(x, y, 0.0, 1.0);
 }
 
-[[stage(fragment)]]
-fn fs_main() -> [[location(0)]] vec4<f32> {
+@stage(fragment)
+fn fs_main() -> @location(0) vec4<f32> {
     return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }
 )";
 
-struct AppState {
+struct AppState
+{
 	WGPUSwapChain swapChain;
 	WGPUDevice device;
 	WGPUQueue queue;
@@ -59,21 +65,47 @@ static void handleUncapturedError(WGPUErrorType type, char const * message, void
 	utils::logF("UNCAPTURED ERROR (%d): %s\n", type, message);
 }
 
+static void printDeviceError(WGPUErrorType errorType, const char* message, void*) {
+    const char* errorTypeName = "";
+    switch (errorType) {
+        case WGPUErrorType_Validation:
+            errorTypeName = "Validation";
+            break;
+        case WGPUErrorType_OutOfMemory:
+            errorTypeName = "Out of memory";
+            break;
+        case WGPUErrorType_Unknown:
+            errorTypeName = "Unknown";
+            break;
+        case WGPUErrorType_DeviceLost:
+            errorTypeName = "Device lost";
+            break;
+        default:
+            InvalidCodePath;
+            return;
+    }
+    utils::logFBreak("%s error: %s", errorTypeName, message);
+}
+
+struct EglSwapBuffersInfo
+{
+    EGLDisplay display;
+    EGLSurface surface;
+};
+
+static void presentCallback(void* userData)
+{
+    EglSwapBuffersInfo* info = (EglSwapBuffersInfo*) userData;
+    eglSwapBuffers(info->display, info->surface);
+}
+
 int main(int argc, const char **argv)
 {
-	WGPUInstance instance;
-
-	WGPUInstanceDescriptor instanceDescriptor = { 0 };
-	instanceDescriptor.nextInChain = nullptr;
-	instance = wgpuCreateInstance(&instanceDescriptor);
-	if (instance == nullptr)
-	{
-		utils::logBreak("wgpu instance could not be created!");
-		return 0;
-	}
-
-	WGPUSurface surface;
 #ifdef __EMSCRIPTEN__
+    wgpu::Instance wgpuInstance;
+    WGPUInstance instance = wgpuInstance.get();
+    auto device = emscripten_webgpu_get_device();
+
 	WGPUSurfaceDescriptorFromCanvasHTMLSelector surfaceDescritporCanvas = { 0 };
 	surfaceDescritporCanvas.chain.next = nullptr;
 	surfaceDescritporCanvas.chain.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector;
@@ -81,7 +113,6 @@ int main(int argc, const char **argv)
 
 	WGPUSurfaceDescriptor surfaceDescriptor = { 0 };
 	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporXlib;
-	surface = wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
 #else
 	Display* display = XOpenDisplay(nullptr);
     if (display == nullptr)
@@ -100,22 +131,87 @@ int main(int argc, const char **argv)
     XClearWindow(display, windowHandle);
     XMapRaised(display, windowHandle);
 
-	WGPUSurfaceDescriptorFromXlibWindow surfaceDescritporXlib = { 0 };
-	surfaceDescritporXlib.chain.next = nullptr;
-	surfaceDescritporXlib.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow;
-	surfaceDescritporXlib.display = display;
-	surfaceDescritporXlib.window = windowHandle;
+    EGLDisplay eglDisplay = eglGetDisplay((EGLNativeDisplayType) display);
+    if (eglDisplay == EGL_NO_DISPLAY)
+    {
+        utils::logBreak("egl display could not be retreived!");
+    }
+    EGLint eglVersionMajor, eglVersionMinor;
+    if (!eglInitialize(eglDisplay, &eglVersionMajor, &eglVersionMinor)) {
+        utils::logBreak("Unable to initialize EGL");
+    }
 
-	WGPUSurfaceDescriptor surfaceDescriptor = { 0 };
-	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporXlib;
-	surface = wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
-#endif
-	if (surface == nullptr)
-	{
-		utils::logBreak("wgpu surface could not be created!");
-	}
+    EGLint eglConfigConstraints[] = {
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 0,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+        EGL_CONFIG_CAVEAT, EGL_NONE,
+        EGL_NONE
+    };
 
-	WGPUAdapter adapter;
+    EGLConfig eglConf;
+    EGLint numConfig;
+    if (!eglChooseConfig(eglDisplay, eglConfigConstraints, &eglConf, 1, &numConfig)) {
+        utils::logFBreak("Failed to choose config (eglError: %s)", eglGetError());
+    }
+
+    if (numConfig != 1) {
+        utils::logFBreak("Didn't get exactly one config, but %d", numConfig);
+    }
+
+    EGLSurface eglSurface = eglCreateWindowSurface(eglDisplay, eglConf, windowHandle, nullptr);
+    if (eglSurface == EGL_NO_SURFACE) {
+        utils::logFBreak("Unable to create EGL surface (eglError: %s)", eglGetError());
+    }
+
+    //// egl-contexts collect all state descriptions needed required for operation
+    EGLint ctxattr[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 3,
+        EGL_NONE
+    };
+    EGLContext eglContext = eglCreateContext(eglDisplay, eglConf, EGL_NO_CONTEXT, ctxattr);
+    if (eglContext == EGL_NO_CONTEXT) {
+        utils::logFBreak("Unable to create EGL context (eglError: %s)", eglGetError());
+    }
+
+    //// associate the egl-context with the egl-surface
+    eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
+
+    EGLint queriedRenderBuffer;
+    if (!eglQueryContext(eglDisplay, eglContext, EGL_RENDER_BUFFER, &queriedRenderBuffer)) {
+        utils::logFBreak("Failed to query EGL_RENDER_BUFFER: %d", eglGetError());
+    }
+
+    if (!eglSwapInterval(eglDisplay, 1)) {
+        utils::logF("eglSwapInterval failed: %d", eglGetError());
+    } else {
+        utils::log("Set swap interval");
+    }
+
+
+    auto dawnInstance = dawn::native::Instance();
+    dawnInstance.DiscoverDefaultAdapters();
+    dawn::native::opengl::AdapterDiscoveryOptionsES adapterOptionsES;
+    adapterOptionsES.getProc = (void* (*)(const char*))eglGetProcAddress;
+    dawnInstance.DiscoverAdapters(&adapterOptionsES);
+
+    // Get an adapter for the backend to use, and create the device.
+    dawn::native::Adapter backendAdapter;
+    {
+        std::vector<dawn::native::Adapter> adapters = dawnInstance.GetAdapters();
+        auto adapterIt = std::find_if(adapters.begin(), adapters.end(),
+            [](const dawn::native::Adapter adapter) -> bool {
+                wgpu::AdapterProperties properties = {};
+                adapter.GetProperties(&properties);
+                return properties.backendType != wgpu::BackendType::Null && properties.adapterType != wgpu::AdapterType::CPU;
+            });
+        assert(adapterIt != adapters.end());
+        backendAdapter = *adapterIt;
+    }
+    // wgpu-native adapter request
+	/*WGPUAdapter adapter;
 
 	WGPURequestAdapterOptions requestAdapterOptions = { 0 };
 	requestAdapterOptions.nextInChain = nullptr;
@@ -141,15 +237,68 @@ int main(int argc, const char **argv)
 	if (device == nullptr)
 	{
 		utils::logBreak("wgpu device could not be created!");
-	}
-	wgpuDeviceSetUncapturedErrorCallback(device, handleUncapturedError, nullptr);
+	}*/
+
+    WGPUDevice device = backendAdapter.CreateDevice();
+    DawnProcTable backendProcs = dawn::native::GetProcs();
+
+    dawnProcSetProcs(&backendProcs);
+
+    WGPUInstance instance = dawnInstance.Get();
+
+    WGPUSurfaceDescriptorFromXlibWindow surfaceDescritporXlib = { 0 };
+	surfaceDescritporXlib.chain.next = nullptr;
+	surfaceDescritporXlib.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow;
+	surfaceDescritporXlib.display = display;
+	surfaceDescritporXlib.window = windowHandle;
+
+	WGPUSurfaceDescriptor surfaceDescriptor = { 0 };
+	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporXlib;
+#endif
+    wgpuDeviceSetUncapturedErrorCallback(device, handleUncapturedError, nullptr);
 	wgpuDeviceSetDeviceLostCallback(device, handleDeviceLost, nullptr);
+
+    WGPUSurface surface = wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
+	if (surface == nullptr)
+	{
+		utils::logBreak("wgpu surface could not be created!");
+	}
 
 	WGPUQueue queue = wgpuDeviceGetQueue(device);
 	if (queue == nullptr)
 	{
 		utils::logBreak("wgpu queue could not be created!");
 	}
+
+	WGPUSwapChain swapChain;
+    
+    EglSwapBuffersInfo swapBuffersInfo = {};
+    swapBuffersInfo.display = eglDisplay;
+    swapBuffersInfo.surface = eglSurface;
+    // TODO: Based on implementation!
+    auto swapChainImplementation = dawn::native::opengl::CreateNativeSwapChainImpl(device, presentCallback, (void*) &swapBuffersInfo);
+    auto preferredFormat = dawn::native::opengl::GetNativeSwapChainPreferredFormat(&swapChainImplementation);
+    WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
+    swapChainDescriptor.implementation = (uint64_t) &swapChainImplementation;
+    swapChain = wgpuDeviceCreateSwapChain(device, nullptr, &swapChainDescriptor);
+
+    // wgpu-native
+    /*
+    WGPUTextureFormat preferredFormat = wgpuSurfaceGetPreferredFormat(surface, adapter);
+
+	WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
+	swapChainDescriptor.usage = WGPUTextureUsage_RenderAttachment;
+	swapChainDescriptor.format = preferredFormat;
+	swapChainDescriptor.width = winWidth;
+	swapChainDescriptor.height = winHeight;
+	swapChainDescriptor.presentMode = WGPUPresentMode_Fifo;
+    swapChain = wgpuDeviceCreateSwapChain(device, surface, &swapChainDescriptor);
+    */
+   if (swapChain == nullptr)
+   {
+       utils::logBreak("wgpu swap chain could not be created!");
+   }
+   wgpuSwapChainConfigure(swapChain, preferredFormat, WGPUTextureUsage_RenderAttachment, winWidth, winHeight);
 
 	WGPUShaderModuleDescriptor shaderSource = { 0 };
 	shaderSource.label = "Shader Source";
@@ -207,7 +356,7 @@ int main(int argc, const char **argv)
 	fragmentState.targetCount = 1;
 
 	WGPUColorTargetState colorTargetState = { 0 };
-	colorTargetState.format = WGPUTextureFormat_BGRA8Unorm;
+	colorTargetState.format = preferredFormat;
 	colorTargetState.writeMask = WGPUColorWriteMask_All;
 
 	WGPUBlendState blendState = {};
@@ -227,15 +376,6 @@ int main(int argc, const char **argv)
 	{
 		utils::logBreak("wgpu render pipeline could not be created!");
 	}
-
-	WGPUSwapChain swapChain;
-
-	WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
-	swapChainDescriptor.usage = WGPUTextureUsage_RenderAttachment;
-	swapChainDescriptor.format = WGPUTextureFormat_BGRA8Unorm;
-	swapChainDescriptor.width = winWidth;
-	swapChainDescriptor.height = winHeight;
-	swapChainDescriptor.presentMode = WGPUPresentMode_Fifo;
 
 /*
     // Upload vertex data
@@ -509,8 +649,11 @@ void loop_iteration(void *_appState)
 	renderPassColorAttachment.resolveTarget = 0;
 	renderPassColorAttachment.loadOp = WGPULoadOp_Clear;
 	renderPassColorAttachment.storeOp = WGPUStoreOp_Store;
-	renderPassColorAttachment.clearColor = { 0.0, 0.0, 0.0, 1.0 };
 	renderPassColorAttachment.clearValue = { 0.0, 0.0, 0.0, 1.0 };
+    
+    renderPassDescriptor.colorAttachments = &renderPassColorAttachment;
+    renderPassDescriptor.timestampWriteCount = 0;
+    renderPassDescriptor.depthStencilAttachment = nullptr;
 
 	renderPass = wgpuCommandEncoderBeginRenderPass(commandEncoder, &renderPassDescriptor);
 	if (renderPass == nullptr)
@@ -522,9 +665,7 @@ void loop_iteration(void *_appState)
 	wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
 	wgpuRenderPassEncoderEnd(renderPass);
 
-	WGPUCommandBufferDescriptor commandBufferDescriptor = { 0 };
-	commandEncoderDescriptor.label = nullptr;
-	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, &commandBufferDescriptor);
+	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, nullptr);
 	if (commandBuffer == nullptr)
 	{
 		utils::logBreak("wgpu command buffer could not be retreived!");
