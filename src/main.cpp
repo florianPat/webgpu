@@ -1,7 +1,7 @@
 #include "Utils.h"
 #include <cstdlib>
 
-#ifdef __EMSCRIPTEN__
+#ifdef EMSCRIPTEN
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #include <emscripten/html5_webgpu.h>
@@ -87,6 +87,7 @@ static void printDeviceError(WGPUErrorType errorType, const char* message, void*
     utils::logFBreak("%s error: %s", errorTypeName, message);
 }
 
+#ifndef EMSCRIPTEN
 struct EglSwapBuffersInfo
 {
     EGLDisplay display;
@@ -98,12 +99,12 @@ static void presentCallback(void* userData)
     EglSwapBuffersInfo* info = (EglSwapBuffersInfo*) userData;
     eglSwapBuffers(info->display, info->surface);
 }
+#endif
 
 int main(int argc, const char **argv)
 {
-#ifdef __EMSCRIPTEN__
-    wgpu::Instance wgpuInstance;
-    WGPUInstance instance = wgpuInstance.get();
+#ifdef EMSCRIPTEN
+    WGPUInstance instance;
     auto device = emscripten_webgpu_get_device();
 
 	WGPUSurfaceDescriptorFromCanvasHTMLSelector surfaceDescritporCanvas = { 0 };
@@ -112,7 +113,7 @@ int main(int argc, const char **argv)
 	surfaceDescritporCanvas.selector = "#webgpu-canvas";
 
 	WGPUSurfaceDescriptor surfaceDescriptor = { 0 };
-	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporXlib;
+	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporCanvas;
 #else
 	Display* display = XOpenDisplay(nullptr);
     if (display == nullptr)
@@ -272,6 +273,7 @@ int main(int argc, const char **argv)
 
 	WGPUSwapChain swapChain;
     
+#ifndef EMSCRIPTEN
     EglSwapBuffersInfo swapBuffersInfo = {};
     swapBuffersInfo.display = eglDisplay;
     swapBuffersInfo.surface = eglSurface;
@@ -281,10 +283,10 @@ int main(int argc, const char **argv)
     WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
     swapChainDescriptor.implementation = (uint64_t) &swapChainImplementation;
     swapChain = wgpuDeviceCreateSwapChain(device, nullptr, &swapChainDescriptor);
-
-    // wgpu-native
-    /*
-    WGPUTextureFormat preferredFormat = wgpuSurfaceGetPreferredFormat(surface, adapter);
+#else
+    // also wgpu-native
+    
+    WGPUTextureFormat preferredFormat = wgpuSurfaceGetPreferredFormat(surface, nullptr);
 
 	WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
 	swapChainDescriptor.usage = WGPUTextureUsage_RenderAttachment;
@@ -293,12 +295,15 @@ int main(int argc, const char **argv)
 	swapChainDescriptor.height = winHeight;
 	swapChainDescriptor.presentMode = WGPUPresentMode_Fifo;
     swapChain = wgpuDeviceCreateSwapChain(device, surface, &swapChainDescriptor);
-    */
+    
+#endif
    if (swapChain == nullptr)
    {
        utils::logBreak("wgpu swap chain could not be created!");
    }
+#ifndef EMSCRIPTEN
    wgpuSwapChainConfigure(swapChain, preferredFormat, WGPUTextureUsage_RenderAttachment, winWidth, winHeight);
+#endif
 
 	WGPUShaderModuleDescriptor shaderSource = { 0 };
 	shaderSource.label = "Shader Source";
@@ -488,7 +493,7 @@ int main(int argc, const char **argv)
 	appState->queue = queue;
 	appState->swapChain = swapChain;
 
-#ifdef __EMSCRIPTEN__
+#ifdef EMSCRIPTEN
     emscripten_set_main_loop_arg(loop_iteration, appState, -1, 0);
 #else
     while (1) {
@@ -498,7 +503,7 @@ int main(int argc, const char **argv)
     return 0;
 }
 
-#ifdef __EMSCRIPTEN__
+#ifdef EMSCRIPTEN
 int mouseMoveCallback(int type, const EmscriptenMouseEvent *event, void *_app_state)
 {
     return true;
@@ -513,7 +518,7 @@ int mouseWheelCallback(int type, const EmscriptenWheelEvent *event, void *_app_s
 void loop_iteration(void *_appState)
 {
     AppState *appState = reinterpret_cast<AppState *>(_appState);
-#ifndef __EMSCRIPTEN__
+#ifndef EMSCRIPTEN
     // TODO: Events
 /*
 	while (XPending(display) > 0)
@@ -649,10 +654,10 @@ void loop_iteration(void *_appState)
 	renderPassColorAttachment.resolveTarget = 0;
 	renderPassColorAttachment.loadOp = WGPULoadOp_Clear;
 	renderPassColorAttachment.storeOp = WGPUStoreOp_Store;
-	renderPassColorAttachment.clearValue = { 0.0, 0.0, 0.0, 1.0 };
+	//renderPassColorAttachment.clearValue = { 0.0, 0.0, 0.0, 1.0 };
+    renderPassColorAttachment.clearColor = { 0.0, 0.0, 0.0, 1.0 };
     
     renderPassDescriptor.colorAttachments = &renderPassColorAttachment;
-    renderPassDescriptor.timestampWriteCount = 0;
     renderPassDescriptor.depthStencilAttachment = nullptr;
 
 	renderPass = wgpuCommandEncoderBeginRenderPass(commandEncoder, &renderPassDescriptor);
@@ -663,7 +668,7 @@ void loop_iteration(void *_appState)
 
 	wgpuRenderPassEncoderSetPipeline(renderPass, appState->pipeline);
 	wgpuRenderPassEncoderDraw(renderPass, 3, 1, 0, 0);
-	wgpuRenderPassEncoderEnd(renderPass);
+	wgpuRenderPassEncoderEndPass(renderPass);
 
 	WGPUCommandBuffer commandBuffer = wgpuCommandEncoderFinish(commandEncoder, nullptr);
 	if (commandBuffer == nullptr)
@@ -672,7 +677,7 @@ void loop_iteration(void *_appState)
 	}
 	wgpuQueueSubmit(appState->queue, 1, &commandBuffer);
 
-#ifndef __EMSCRIPTEN__
+#ifndef EMSCRIPTEN
 	wgpuSwapChainPresent(appState->swapChain);
 #endif
 }
