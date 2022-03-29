@@ -18,6 +18,12 @@ set_target_properties(webgpu PROPERTIES
 	CXX_STANDARD_REQUIRED ON)
 
 if (NOT EMSCRIPTEN)
+	if(WGPU_NATIVE_DIR)
+		target_compile_definitions(webgpu
+								   PRIVATE
+								   WGPUNATIVE)
+	endif()
+
 	target_compile_definitions(webgpu
 							   PRIVATE
 							   NOMINMAX WIN32_LEAN_AND_MEAN)

@@ -3,6 +3,7 @@
         "/usr/lib/emscripten"
     ],
     "cmake.configureArgs": [
-        "-DDawn_DIR=/home/florian/projects/dawn/out/Release/"
+        "-DDawn_DIR=/home/florian/projects/dawn/out/Release/",
+        "-DWGPU_NATIVE_DIR=/home/florian/projects/wgpu-native",
     ]
 }

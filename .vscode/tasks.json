@@ -24,6 +24,12 @@
             "type": "shell",
             "command": "mkdir -p native-build && cd native-build && cmake .. -DCMAKE_BUILD_TYPE=Release -DDawn_DIR=/home/florian/projects/dawn/out/Release/ && cmake --build .",
             "problemMatcher": [],
-        }
+        },
+        {
+            "label": "build native wgpu-native debug",
+            "type": "shell",
+            "command": "mkdir -p native-build-wgpu && cd native-build-wgpu && cmake .. -DCMAKE_BUILD_TYPE=Debug -DWGPU_NATIVE_DIR=/home/florian/projects/wgpu-native && cmake --build .",
+            "problemMatcher": [],
+        },
     ]
 }
