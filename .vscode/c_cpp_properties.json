@@ -5,8 +5,6 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "/usr/lib/emscripten/system/include/**",
-                "/home/florian/projects/dawn/include/**",
-                "/home/florian/projects/dawn/out/Release/gen/include/**"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/clang",

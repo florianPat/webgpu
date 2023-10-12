@@ -1,4 +1,2 @@
-/emcmake-build
-/native-build
-/build
-/native-build-wgpu
+/emcmake-build*
+/native-build*

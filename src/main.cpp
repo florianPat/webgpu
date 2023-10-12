@@ -6,16 +6,11 @@
 #include <emscripten/html5.h>
 #include <emscripten/html5_webgpu.h>
 #else
-    #ifdef WGPUNATIVE
-    #include <webgpu-headers/webgpu.h>
-    #include <wgpu.h>
-    #else
     #include <dawn/webgpu.h>
     #include <dawn/webgpu_cpp.h>
     #include <dawn/dawn_proc.h>
     #include <dawn/native/DawnNative.h>
     #include <dawn/native/OpenGLBackend.h>
-    #endif
     #include "X11.h"
     #include <EGL/egl.h>
     #include <GLES3/gl3.h>
@@ -213,7 +208,7 @@ int main(int argc, const char **argv)
 #ifndef WGPUNATIVE
     auto dawnInstance = dawn::native::Instance();
     dawnInstance.DiscoverDefaultAdapters();
-    dawn::native::opengl::AdapterDiscoveryOptionsES adapterOptionsES;
+    dawn::native::opengl::PhysicalDeviceDiscoveryOptions adapterOptionsES(WGPUBackendType::WGPUBackendType_OpenGLES);
     adapterOptionsES.getProc = (void* (*)(const char*))eglGetProcAddress;
     bool result = dawnInstance.DiscoverAdapters(&adapterOptionsES);
     if(!result)
@@ -314,16 +309,17 @@ int main(int argc, const char **argv)
 	}
 
 	WGPUSwapChain swapChain;
-    
+
 #if !defined(EMSCRIPTEN) && !defined(WGPUNATIVE)
     EglSwapBuffersInfo swapBuffersInfo = {};
     swapBuffersInfo.display = eglDisplay;
     swapBuffersInfo.surface = eglSurface;
-    // TODO: Based on implementation!
-    auto swapChainImplementation = dawn::native::opengl::CreateNativeSwapChainImpl(device, presentCallback, (void*) &swapBuffersInfo);
-    auto preferredFormat = dawn::native::opengl::GetNativeSwapChainPreferredFormat(&swapChainImplementation);
     WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
-    swapChainDescriptor.implementation = (uint64_t) &swapChainImplementation;
+    swapChainDescriptor.usage = WGPUTextureUsage::WGPUTextureUsage_RenderAttachment;
+    swapChainDescriptor.presentMode = WGPUPresentMode::WGPUPresentMode_Fifo;
+    swapChainDescriptor.format = WGPUTextureFormat::WGPUTextureFormat_RGBA8UnormSrgb;
+    swapChainDescriptor.height = winHeight;
+    swapChainDescriptor.width = winWidth;
     swapChain = wgpuDeviceCreateSwapChain(device, nullptr, &swapChainDescriptor);
 #else
 #ifdef WGPUNATIVE
@@ -346,7 +342,7 @@ int main(int argc, const char **argv)
        utils::logBreak("wgpu swap chain could not be created!");
    }
 #if !defined(EMSCRIPTEN) && !defined(WGPUNATIVE)
-   wgpuSwapChainConfigure(swapChain, preferredFormat, WGPUTextureUsage_RenderAttachment, winWidth, winHeight);
+   //wgpuSwapChainConfigure(swapChain, preferredFormat, WGPUTextureUsage_RenderAttachment, winWidth, winHeight);
 #endif
 
 	WGPUShaderModuleDescriptor shaderSource = { 0 };
@@ -357,7 +353,7 @@ int main(int argc, const char **argv)
 #ifdef WGPUNATIVE
     wgslDescriptor.code = WGLS_WGPUNATIVE_SHADER;
 #else
-	wgslDescriptor.source = WGSL_SHADER;
+	// wgslDescriptor.source = WGSL_SHADER;
 #endif
 	shaderSource.nextInChain = (const WGPUChainedStruct*) &wgslDescriptor;
 
@@ -409,7 +405,7 @@ int main(int argc, const char **argv)
 	fragmentState.targetCount = 1;
 
 	WGPUColorTargetState colorTargetState = { 0 };
-	colorTargetState.format = preferredFormat;
+	colorTargetState.format = WGPUTextureFormat::WGPUTextureFormat_RGBA8UnormSrgb;
 	colorTargetState.writeMask = WGPUColorWriteMask_All;
 
 	WGPUBlendState blendState = {};
