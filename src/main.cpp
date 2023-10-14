@@ -192,13 +192,13 @@ int main(int argc, const char **argv)
     }
 
     WGPUSurfaceDescriptorFromXlibWindow surfaceDescritporXlib = { 0 };
-	surfaceDescritporXlib.chain.next = nullptr;
-	surfaceDescritporXlib.chain.sType = WGPUSType_SurfaceDescriptorFromXlibWindow;
 	surfaceDescritporXlib.display = display;
 	surfaceDescritporXlib.window = windowHandle;
+    surfaceDescritporXlib.chain.next = nullptr;
+    surfaceDescritporXlib.chain.sType = WGPUSType::WGPUSType_SurfaceDescriptorFromXlibWindow;
 
 	WGPUSurfaceDescriptor surfaceDescriptor = { 0 };
-	surfaceDescriptor.nextInChain = (const WGPUChainedStruct*)&surfaceDescritporXlib;
+    surfaceDescriptor.nextInChain = (WGPUChainedStruct*) &surfaceDescritporXlib;
 #endif
 
     WGPUSurface surface = wgpuInstanceCreateSurface(instance, &surfaceDescriptor);
@@ -210,6 +210,10 @@ int main(int argc, const char **argv)
     WGPUAdapter adapter;
     WGPURequestAdapterOptions requestAdapterOptions = {};
     requestAdapterOptions.compatibleSurface = surface;
+    requestAdapterOptions.compatibilityMode = true;
+    requestAdapterOptions.powerPreference = WGPUPowerPreference::WGPUPowerPreference_Undefined;
+    requestAdapterOptions.forceFallbackAdapter = false;
+    requestAdapterOptions.backendType = WGPUBackendType::WGPUBackendType_OpenGLES;
     wgpuInstanceRequestAdapter(instance, &requestAdapterOptions, requestAdapterCallback, (void*) &adapter);
 
     if (adapter == nullptr)
@@ -219,6 +223,7 @@ int main(int argc, const char **argv)
 
     WGPUDevice device;
     WGPUDeviceDescriptor deviceDescriptor = { 0 };
+    deviceDescriptor.nextInChain = nullptr;
     deviceDescriptor.requiredFeaturesCount = 0;
     deviceDescriptor.requiredLimits = nullptr;
     deviceDescriptor.deviceLostCallback = handleDeviceLost;
@@ -243,6 +248,7 @@ int main(int argc, const char **argv)
     WGPUSwapChainDescriptor swapChainDescriptor = { 0 };
     swapChainDescriptor.usage = WGPUTextureUsage::WGPUTextureUsage_RenderAttachment;
     swapChainDescriptor.presentMode = WGPUPresentMode::WGPUPresentMode_Fifo;
+    // NOTE: Dawn does not implement wgpuSurfaceGetPreferredFormat yet...
 #if defined(EMSCRIPTEN)
     WGPUTextureFormat preferredFormat = wgpuSurfaceGetPreferredFormat(surface, adapter);
     swapChainDescriptor.format = preferredFormat;

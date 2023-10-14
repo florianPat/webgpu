@@ -5,6 +5,7 @@
 //#define WINDOWS_LEAN_AND_MEAN
 //#include <Windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #undef assert
 
@@ -12,8 +13,8 @@
 
 #ifdef DEBUG
 #ifdef CONS
+// TODO: Add platform agnostic message box!
 #define assert(exp) if(!((exp) && true)) do { printf("ASSERT: %s\n", #exp); \
-		MessageBoxA(0, #exp, "Uuups da ist aber etwas heftig schief gelaufen!", MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST | MB_SYSTEMMODAL);\
 		abort(); } while(false)
 #else
 #define assert(exp) if(!((exp) && true)) do { OutputDebugStringA("ASSERT: "); OutputDebugStringA(#exp); OutputDebugStringA("\n"); \

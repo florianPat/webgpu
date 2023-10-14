@@ -15,6 +15,12 @@ add_executable(webgpu
 set_target_properties(webgpu PROPERTIES
 	CXX_STANDARD 20
 	CXX_STANDARD_REQUIRED ON)
+
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+	target_compile_definitions(webgpu
+			PRIVATE
+			DEBUG)
+endif()
 # -----------------------
 
 # ---- Add dawn library ----
@@ -25,9 +31,6 @@ add_subdirectory(dawn)
 # --------------------------
 
 if (NOT EMSCRIPTEN)
-	target_compile_definitions(webgpu
-							   PRIVATE
-							   NOMINMAX WIN32_LEAN_AND_MEAN)
 	find_package(Threads REQUIRED)
 
 	target_link_libraries(webgpu PUBLIC
@@ -37,6 +40,9 @@ if (NOT EMSCRIPTEN)
 						  dawn_proc)
 
 	if (WIN32)
+		target_compile_definitions(webgpu
+				PRIVATE
+				NOMINMAX WIN32_LEAN_AND_MEAN)
 	elseif(APPLE)
 	else()
 		target_compile_definitions(webgpu
