@@ -6,13 +6,13 @@
         {
             "label": "build emscripten",
             "type": "shell",
-            "command": "mkdir -p emcmake-build && cd emcmake-build && emcmake cmake .. && cmake --build .",
-            "problemMatcher": [],
+            "command": "mkdir -p emcmake-build && emcmake cmake -S . -B ./emcmake-build && cmake --build ./emcmake-build",
+            "problemMatcher": []
         },
         {
             "label": "build native debug",
             "type": "shell",
-            "command": "mkdir -p native-build && cd native-build && cmake .. -DCMAKE_BUILD_TYPE=Debug && cmake --build .",
+            "command": "mkdir -p native-build-debug && cmake -G ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/usr/bin/ninja -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CPP_COMPILER=/usr/bin/clang++ -S . -B ./native-build-debug && cmake --build ./native-build-debug --target webgpu -j 6",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
@@ -22,8 +22,8 @@
         {
             "label": "build native release",
             "type": "shell",
-            "command": "mkdir -p native-build && cd native-build && cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build .",
-            "problemMatcher": [],
+            "command": "mkdir -p native-build-release && cmake -G ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=/usr/bin/ninja -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CPP_COMPILER=/usr/bin/clang++ -S . -B ./native-build-debug && cmake --build ./native-build-debug --target webgpu -j 6",
+            "problemMatcher": []
         }
     ]
 }
